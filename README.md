@@ -16,7 +16,7 @@ shells provided the dependencies are met:
 ### Installation ###
 
 Obtain the aforementioned dependencies as required. Then copy the `strtop`
-script to somewhere in your path, like `~/.bin`. Symlinking works too.
+script to somewhere in your path, like `~/bin`. Symlinking works too.
 
 
 ### Usage ###
