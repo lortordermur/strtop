@@ -1,0 +1,324 @@
+#!/bin/sh
+
+# strtop
+#
+# Shows realtime statistics about a Syncthing relay server.
+#
+# Requires: curl, ncurses-bin, jd.
+#
+# This script is in the public domain and was originally written by
+# Dennis Murczak <https://github.com/lortordermur/>
+
+
+#### GLOBALS ####
+
+relayserver="localhost"
+relayport="22070"
+relaystatus=
+
+viewwidth="78"
+
+maxtphistsize="24"
+
+A_BOLD="\e[1m"
+A_NOBOLD="\e[21m"
+A_UL="\e[4m"
+A_NOUL="\e[24m"
+A_INV="\e[7m"
+A_NOINV="\e[27m"
+A_NORMAL="\e[0m"
+
+
+#### FUNCTIONS ####
+
+# Check whether a command exists in the system, custom error message possible
+commandexists () {
+  command -v "$1" > /dev/null || { echo "Required command '$1' not found! $2" && echo && exit 1; }
+}
+
+# Seconds since the UNIX epoch
+secondsepoch () {
+  echo $(($(date +%s%N) / 1000000))
+}
+
+# Portable echo fix with support for escape codes (like "echo -e")
+echo () {
+  printf "%b\n" "$*"
+}
+
+newline () {
+  printf "\n"
+  tput cuf $coloffset
+}
+
+# Clear to end of line, then print a newline
+finline () {
+  tput el
+  newline
+}
+
+echoline () {
+  printf "%b" "$*"
+  finline
+}
+
+errorexit () {
+  echo "$1"
+  exit 1
+}
+
+# Turn a byte amount into something human-readable
+formatbytes () {
+  local bytes="0"
+  local bytestring
+  
+  [ ! -z "$1" ] && bytes="$1"
+  
+  if [ "$bytes" -eq "0" ]; then
+    if [ -z "$2" ]; then
+      bytestring="0 B"
+    else
+      bytestring="$2"
+    fi
+  elif [ "$bytes" -le "10240" ]; then
+    bytestring="$bytes B"
+  elif [ "$bytes" -le "10485760" ]; then
+    bytestring="$(($bytes / 1024)) KB"
+  elif [ "$bytes" -le "10737418240" ]; then
+    bytestring="$(($bytes / 1048576)) MB"
+  elif [ "$bytes" -le "10995116277760" ]; then
+    bytestring="$(($bytes / 1073741824)) GB"
+  elif [ "$bytes" -le "11258999068426240" ]; then
+    bytestring="$(($bytes / 1099511627776)) TB"
+  elif [ "$bytes" -le "11529215046068469760" ]; then
+    bytestring="$(($bytes / 1125899906842624)) PB"
+  else
+    bytestring="$(($bytes / 1152921504606846976)) EB"
+  fi
+
+echo $bytestring
+}
+
+formatbits () {
+  formatbytes $(($1 / 8)) $2
+}
+
+# Turn seconds into a nice and brief time string
+formatseconds () {
+  local timestring
+  local interval="$1"
+
+  local days=$(($interval / 60 / 60 / 24))
+  local hours=$(($interval / 60 / 60 % 24))
+  local minutes=$(($interval / 60 % 60))
+  local seconds=$(($interval % 60))
+
+  if [ "$days" -gt "0" ]; then
+    timestring="$timestring$days d "
+  fi
+  
+  if [ "$days" -lt "10" ] && [ "$hours" -gt "0" ]; then
+    timestring="$timestring$hours h "
+  fi
+  
+  if [ "$days" -eq "0" ] && [ "$minutes" -gt "0" ]; then
+    timestring="$timestring$minutes m "
+  fi
+  
+  if [ "$days" -eq "0" ] && [ "$hours" -eq "0" ] && [ "$minutes" -lt "10" ] && [ "$seconds" -gt "0" ]; then
+    timestring="$timestring$seconds s"
+  fi  
+
+  echo $timestring
+}
+
+# Populates and shifts the throughput history
+updatetphistory () {
+  local spd="$1"
+  [ -z "$spd" ] && $spd="0"
+  
+  local histsize=$(echo $tphistory | wc -w)
+  
+  if [ "$histsize" -eq "0" ]; then
+    tphistory=$spd
+  elif [ "$histsize" -lt "$maxtphistsize" ]; then
+    tphistory="$tphistory $spd"
+  elif [ "$histsize" -eq "$maxtphistsize" ]; then
+    tphistory=$(echo $tphistory | cut -d ' ' -f2-)
+    tphistory="$tphistory $spd"
+  fi
+}
+
+usage () {
+  echo "Usage: $(basename $0) [relayserver] [relayport]"
+  echo "
+This software is a 'top' for Syncthing relays. It continually displays basic
+information, as well as the recent throughput history as a bar graph.
+
+Parameters
+----------
+
+[relayserver]: IP address or network name of the relay. Defaults to
+               'localhost'.
+[relayport]:   Port to connect to. Defaults to 22070.
+"
+
+  exit 0
+}
+
+
+#### MAIN ####
+
+# Parameter handler
+if [ "$1" ]; then
+  case "$1" in
+    "--help")
+      usage
+      exit
+      ;;
+    *)
+      relayserver="$1"
+      ;;
+  esac
+
+  [ ! -z "$2" ] && relayport="$2"
+fi
+
+commandexists "curl"
+commandexists "jq"
+commandexists "bc"
+commandexists "tput" "Please install the ncurses binaries."
+
+# Generate an inverted horizontal separator bar
+separator=$A_INV
+for i in $(seq $viewwidth); do
+  separator="$separator-"
+done
+separator="$separator$A_NOINV"
+
+statusurl="$relayserver:$relayport/status"
+tphistory=
+
+# Clear the screen before the main loop
+tput clear
+
+# Main loop start
+while true; do
+
+  # Get the server status JSON, plus error checking
+  relaystatus=$(curl -s -m 10 "$statusurl")
+  [ "$?" -ne "0" ] && errorexit "Error contacting relay '$relayserver:$relayport'!"
+
+  v=$(echo $relaystatus | jq '.version')
+  [ "$?" -eq "4" ] && errorexit "No valid response from relay '$relayserver:$relayport'!"
+
+  # Determine on which screen column to start
+  coloffset=$(($(tput cols) / 2 - $viewwidth / 2))
+  [ "$coloffset" -lt "0" ] && coloffset="0"
+
+  # Home the cursor
+  tput cup 0 $coloffset
+
+  # Headline
+  providedby=$(echo $relaystatus | jq '.options["provided-by"]' | tr -d '"')
+  headline="Status of $A_BOLD$relayserver:$relayport$A_NOBOLD"
+  [ ! -z "$providedby" ] && headline="$headline -- $A_BOLD$providedby$A_NOBOLD"
+  echoline $headline
+
+  stversion=$(echo $relaystatus | jq '.version' | tr -d '"')
+  serverinfo=
+
+  if [ ! -z "$stversion" ]; then
+    serverinfo="Running strelaysrv $stversion"
+  else
+    serverinfo="Running unknown server version"
+  fi
+
+  os=$(echo $relaystatus | jq '.goOS' | tr -d '"')
+  arch=$(echo $relaystatus | jq '.goArch' | tr -d '"')
+  serverinfo="$serverinfo on $os/$arch"
+  echoline $serverinfo
+
+  echoline $separator
+
+  # Connection information
+  activesessions=$(echo $relaystatus | jq '.numActiveSessions')
+  numconnections=$(echo $relaystatus | jq '.numConnections')
+  echoline "Active sessions: $A_BOLD$activesessions$A_NOBOLD, number of connections: $A_BOLD$numconnections$A_NOBOLD"
+
+  globalrate=$(echo $relaystatus | jq '.options["global-rate"]')
+  persessionrate=$(echo $relaystatus | jq '.options["per-session-rate"]')
+  echoline "Global rate limit: $A_BOLD$(formatbytes $globalrate "unlimited")$A_NOBOLD, per session limit: $A_BOLD$(formatbytes $persessionrate "unlimited")$A_NOBOLD"
+
+  # Throughput information
+  bytesproxied=$(echo $relaystatus | jq '.bytesProxied')
+  echoline "Data proxied: $A_BOLD$(formatbytes $bytesproxied "--")$A_NOBOLD"
+
+  curspd=$(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[0]')
+  kbps10s=$(formatbits $curspd "--")
+  kbps1m=$(formatbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[1]') "--")
+  kbps5m=$(formatbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[2]') "--")
+  kbps15m=$(formatbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[3]') "--")
+  kbps30m=$(formatbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[4]') "--")
+  kbps60m=$(formatbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[5]') "--")
+  echoline "Throughput: $A_BOLD$kbps10s/s$A_NOBOLD (10 s), $A_BOLD$kbps1m/s$A_NOBOLD (1 m), $A_BOLD$kbps5m/s$A_NOBOLD (5 m), "
+  echoline "            $A_BOLD$kbps15m/s$A_NOBOLD (15 m), $A_BOLD$kbps30m/s$A_NOBOLD (30 m), $A_BOLD$kbps60m/s$A_NOBOLD (60 m)"
+
+  newline
+
+  # Throughput history graph
+  updatetphistory $curspd
+
+  tphistmax="1"
+  barheights=""
+  for hist in $tphistory; do
+    [ "$hist" -gt "$tphistmax" ] && tphistmax=$hist
+    barh=$(printf "%.0f" $(echo "$hist/$tphistmax*5" | bc -l))
+    barheights="$barheights$barh "
+  done
+
+  fillspace=$(($maxtphistsize - $(echo $tphistory | wc -w)))
+  fillstring=""
+
+  for i in $(seq $fillspace); do
+    fillstring="$fillstring  "
+  done
+
+  for barline in 5 4 3 2 1; do
+    blstring="            | $fillstring"
+    
+    for barh in $barheights; do
+      if [ "$barh" -ge "$barline" ]; then
+        blstring="$blstring$A_INV#$A_NOINV "
+      else
+        blstring="$blstring  "
+      fi
+    done
+    
+    graphlabel=""
+    [ "$barline" -eq "5" ] && graphlabel="$(formatbits $tphistmax)/s"
+    
+    echoline "$blstring|$graphlabel"
+  done
+
+  newline
+
+  # Uptime information
+  uptimeseconds=$(echo $relaystatus | jq '.uptimeSeconds')
+  starttime=$(echo $relaystatus | jq '.startTime' | tr -d '"')
+
+  echoline "Server up for $A_BOLD$(formatseconds $uptimeseconds)$A_NOBOLD since $(date -d $starttime)"
+
+  echoline $separator
+
+  echoline "Press CTRL-C to exit"
+
+  # Show the cursor while waiting
+  tput cnorm
+  sleep 10
+  tput civis
+
+done
+# Main loop end
+
+exit 0
