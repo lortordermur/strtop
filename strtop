@@ -18,8 +18,12 @@ relaystatus=
 
 viewwidth="78"
 
+# Interval at which the throughput history (and everything else) is updated
+historyinterval="10"
+# Maximum 10 s throughput history (default 24 = 4 minutes)
 maxtphistsize="24"
 
+# ANSI formatting codes
 A_BOLD="\e[1m"
 A_NOBOLD="\e[21m"
 A_UL="\e[4m"
@@ -31,7 +35,8 @@ A_NORMAL="\e[0m"
 
 #### FUNCTIONS ####
 
-# Check whether a command exists in the system, custom error message possible
+# Check whether a command exists in the system, optionally with a custom error
+# message
 commandexists () {
   command -v "$1" > /dev/null || { echo "Required command '$1' not found! $2" && echo && exit 1; }
 }
@@ -41,7 +46,7 @@ secondsepoch () {
   echo $(($(date +%s%N) / 1000000))
 }
 
-# Portable echo fix with support for escape codes (like "echo -e")
+# Portable fixed echo with support for escape codes (like 'echo -e')
 echo () {
   printf "%b\n" "$*"
 }
@@ -174,7 +179,6 @@ if [ "$1" ]; then
   case "$1" in
     "--help")
       usage
-      exit
       ;;
     *)
       relayserver="$1"
@@ -206,13 +210,13 @@ tput clear
 while true; do
 
   # Get the server status JSON, plus error checking
-  relaystatus=$(curl -s -m 10 "$statusurl")
+  relaystatus=$(curl -s -m "$historyinterval" "$statusurl")
   [ "$?" -ne "0" ] && errorexit "Error contacting relay '$relayserver:$relayport'!"
 
   v=$(echo $relaystatus | jq '.version')
   [ "$?" -eq "4" ] && errorexit "No valid response from relay '$relayserver:$relayport'!"
 
-  # Determine on which screen column to start
+  # Determine on which terminal column to start
   coloffset=$(($(tput cols) / 2 - $viewwidth / 2))
   [ "$coloffset" -lt "0" ] && coloffset="0"
 
@@ -269,7 +273,8 @@ while true; do
   # Throughput history graph
   updatetphistory $curspd
 
-  tphistmax="1"
+  # Calculate bar heights from history "array"
+  tphistmax="1" # Initial history maximum is 1 bit as a div by zero safeguard
   barheights=""
   for hist in $tphistory; do
     [ "$hist" -gt "$tphistmax" ] && tphistmax=$hist
@@ -277,6 +282,7 @@ while true; do
     barheights="$barheights$barh "
   done
 
+  # Create filler space if the history is not yet filled up
   fillspace=$(($maxtphistsize - $(echo $tphistory | wc -w)))
   fillstring=""
 
@@ -284,6 +290,7 @@ while true; do
     fillstring="$fillstring  "
   done
 
+  # Output the filler space and bars, line by line
   for barline in 5 4 3 2 1; do
     blstring="            | $fillstring"
     
@@ -295,8 +302,13 @@ while true; do
       fi
     done
     
+    # Maximum history throughput (what the graph is scaled to) at top right
     graphlabel=""
-    [ "$barline" -eq "5" ] && graphlabel="$(formatbits $tphistmax)/s"
+    if [ "$barline" -eq "5" ]; then
+      graphlabel="$(formatbits $tphistmax)/s"
+    elif [ "$barline" -eq "1" ]; then
+      graphlabel="$(formatbits "0")/s"
+    fi
     
     echoline "$blstring|$graphlabel"
   done
@@ -306,16 +318,15 @@ while true; do
   # Uptime information
   uptimeseconds=$(echo $relaystatus | jq '.uptimeSeconds')
   starttime=$(echo $relaystatus | jq '.startTime' | tr -d '"')
-
   echoline "Server up for $A_BOLD$(formatseconds $uptimeseconds)$A_NOBOLD since $(date -d $starttime)"
 
   echoline $separator
 
   echoline "Press CTRL-C to exit"
 
-  # Show the cursor while waiting
+  # Show the cursor only while waiting
   tput cnorm
-  sleep 10
+  sleep $historyinterval
   tput civis
 
 done
