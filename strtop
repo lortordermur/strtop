@@ -30,7 +30,13 @@ A_UL="\e[4m"
 A_NOUL="\e[24m"
 A_INV="\e[7m"
 A_NOINV="\e[27m"
+A_RED="\e[31m"
+A_NOCOLOR="\e[39m"
 A_NORMAL="\e[0m"
+
+# Combined ANSI formattinng codes
+A_ERR="$A_RED$A_BOLD"
+A_NOERR="$A_NOBOLD$A_NOCOLOR"
 
 
 #### FUNCTIONS ####
@@ -68,7 +74,7 @@ echoline () {
 }
 
 errorexit () {
-  echo "$1"
+  echo "$A_ERR$1$A_NOERR"
   exit 1
 }
 
@@ -215,6 +221,9 @@ while true; do
 
   v=$(echo $relaystatus | jq '.version')
   [ "$?" -eq "4" ] && errorexit "No valid response from relay '$relayserver:$relayport'!"
+  
+  # Switch off cursor (needs to come after error checks but before drawing)
+  tput civis
 
   # Determine on which terminal column to start
   coloffset=$(($(tput cols) / 2 - $viewwidth / 2))
@@ -324,10 +333,9 @@ while true; do
 
   echoline "Press CTRL-C to exit"
 
-  # Show the cursor only while waiting
+  # Show the cursor while waiting
   tput cnorm
   sleep $historyinterval
-  tput civis
 
 done
 # Main loop end
