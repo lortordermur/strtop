@@ -78,12 +78,20 @@ errorexit () {
   exit 1
 }
 
+# Arithmetic division using bc
+divf () {
+  scale="1" # Default to one decimal place
+  [ "$3" ] && scale="$3"
+
+  echo "scale=$scale; $1/$2" | bc
+}
+
 # Turn a byte amount into something human-readable
 formatbytes () {
   local bytes="0"
   local bytestring
   
-  [ ! -z "$1" ] && bytes="$1"
+  [ "$1" ] && bytes="$1"
   
   if [ "$bytes" -eq "0" ]; then
     if [ -z "$2" ]; then
@@ -91,20 +99,20 @@ formatbytes () {
     else
       bytestring="$2"
     fi
-  elif [ "$bytes" -le "10240" ]; then
+  elif [ "$bytes" -le "1024" ]; then
     bytestring="$bytes B"
-  elif [ "$bytes" -le "10485760" ]; then
-    bytestring="$(($bytes / 1024)) KB"
-  elif [ "$bytes" -le "10737418240" ]; then
-    bytestring="$(($bytes / 1048576)) MB"
-  elif [ "$bytes" -le "10995116277760" ]; then
-    bytestring="$(($bytes / 1073741824)) GB"
-  elif [ "$bytes" -le "11258999068426240" ]; then
-    bytestring="$(($bytes / 1099511627776)) TB"
-  elif [ "$bytes" -le "11529215046068469760" ]; then
-    bytestring="$(($bytes / 1125899906842624)) PB"
+  elif [ "$bytes" -le "1048576" ]; then
+    bytestring="$(divf "$bytes" "1024") KB"
+  elif [ "$bytes" -le "1073741824" ]; then
+    bytestring="$(divf "$bytes" "1048576") MB"
+  elif [ "$bytes" -le "1099511627776" ]; then
+    bytestring="$(divf "$bytes" "1073741824") GB"
+  elif [ "$bytes" -le "1125899906842624" ]; then
+    bytestring="$(divf "$bytes" "1099511627776") TB"
+  elif [ "$bytes" -le "1152921504606846976" ]; then
+    bytestring="$(divf "$bytes" "1125899906842624") PB"
   else
-    bytestring="$(($bytes / 1152921504606846976)) EB"
+    bytestring="$(divf "$bytes" "1152921504606846976") EB"
   fi
 
 echo $bytestring
@@ -112,6 +120,10 @@ echo $bytestring
 
 formatbits () {
   formatbytes $(($1 / 8)) $2
+}
+
+formatkbits () {
+  formatbytes $(($1 * 128)) $2
 }
 
 # Turn seconds into a nice and brief time string
@@ -191,7 +203,7 @@ if [ "$1" ]; then
       ;;
   esac
 
-  [ ! -z "$2" ] && relayport="$2"
+  [ "$2" ] && relayport="$2"
 fi
 
 commandexists "curl"
@@ -235,13 +247,13 @@ while true; do
   # Headline
   providedby=$(echo $relaystatus | jq '.options["provided-by"]' | tr -d '"')
   headline="Status of $A_BOLD$relayserver:$relayport$A_NOBOLD"
-  [ ! -z "$providedby" ] && headline="$headline -- $A_BOLD$providedby$A_NOBOLD"
+  [ "$providedby" ] && headline="$headline -- $A_BOLD$providedby$A_NOBOLD"
   echoline $headline
 
   stversion=$(echo $relaystatus | jq '.version' | tr -d '"')
   serverinfo=
 
-  if [ ! -z "$stversion" ]; then
+  if [ "$stversion" ]; then
     serverinfo="Running strelaysrv $stversion"
   else
     serverinfo="Running unknown server version"
@@ -261,19 +273,19 @@ while true; do
 
   globalrate=$(echo $relaystatus | jq '.options["global-rate"]')
   persessionrate=$(echo $relaystatus | jq '.options["per-session-rate"]')
-  echoline "Global rate limit: $A_BOLD$(formatbytes $globalrate "unlimited")$A_NOBOLD, per session limit: $A_BOLD$(formatbytes $persessionrate "unlimited")$A_NOBOLD"
+  echoline "Global rate limit: $A_BOLD$(formatbytes $globalrate "unlimited")/s$A_NOBOLD, per session limit: $A_BOLD$(formatbytes $persessionrate "unlimited")/s$A_NOBOLD"
 
   # Throughput information
   bytesproxied=$(echo $relaystatus | jq '.bytesProxied')
   echoline "Data proxied: $A_BOLD$(formatbytes $bytesproxied "--")$A_NOBOLD"
 
   curspd=$(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[0]')
-  kbps10s=$(formatbits $curspd "--")
-  kbps1m=$(formatbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[1]') "--")
-  kbps5m=$(formatbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[2]') "--")
-  kbps15m=$(formatbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[3]') "--")
-  kbps30m=$(formatbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[4]') "--")
-  kbps60m=$(formatbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[5]') "--")
+  kbps10s=$(formatkbits $curspd "--")
+  kbps1m=$(formatkbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[1]') "--")
+  kbps5m=$(formatkbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[2]') "--")
+  kbps15m=$(formatkbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[3]') "--")
+  kbps30m=$(formatkbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[4]') "--")
+  kbps60m=$(formatkbits $(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[5]') "--")
   echoline "Throughput: $A_BOLD$kbps10s/s$A_NOBOLD (10 s), $A_BOLD$kbps1m/s$A_NOBOLD (1 m), $A_BOLD$kbps5m/s$A_NOBOLD (5 m), "
   echoline "            $A_BOLD$kbps15m/s$A_NOBOLD (15 m), $A_BOLD$kbps30m/s$A_NOBOLD (30 m), $A_BOLD$kbps60m/s$A_NOBOLD (60 m)"
 
@@ -283,11 +295,17 @@ while true; do
   updatetphistory $curspd
 
   # Calculate bar heights from history "array"
-  tphistmax="1" # Initial history maximum is 1 bit as a div by zero safeguard
+  tphistmax="0"
+  
   barheights=""
   for hist in $tphistory; do
     [ "$hist" -gt "$tphistmax" ] && tphistmax=$hist
-    barh=$(printf "%.0f" $(echo "$hist/$tphistmax*5" | bc -l))
+    if [ "$tphistmax" -eq "0" ]; then
+      tphm="0.001"  # Kludge variable to prevent a divide by zero
+    else
+      tphm=$tphistmax
+    fi
+    barh=$(printf "%.0f" $(echo "$hist/$tphm*5" | bc -l))
     barheights="$barheights$barh "
   done
 
@@ -314,9 +332,9 @@ while true; do
     # Maximum history throughput (what the graph is scaled to) at top right
     graphlabel=""
     if [ "$barline" -eq "5" ]; then
-      graphlabel="$(formatbits $tphistmax)/s"
+      graphlabel="$(formatkbits $tphistmax)/s"
     elif [ "$barline" -eq "1" ]; then
-      graphlabel="$(formatbits "0")/s"
+      graphlabel="$(formatkbits "0")/s"
     fi
     
     echoline "$blstring|$graphlabel"
