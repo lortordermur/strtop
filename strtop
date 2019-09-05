@@ -4,7 +4,7 @@
 #
 # Shows realtime statistics about a Syncthing relay server.
 #
-# Requires: curl, ncurses-bin, jd.
+# Requires: jq, ncurses-bin, curl, bc.
 #
 # This script is in the public domain and was originally written by
 # Dennis Murczak <https://github.com/lortordermur/>
