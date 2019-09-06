@@ -34,23 +34,12 @@ A_RED="\e[31m"
 A_NOCOLOR="\e[39m"
 A_NORMAL="\e[0m"
 
-# Combined ANSI formattinng codes
+# Combined ANSI formatting codes
 A_ERR="$A_RED$A_BOLD"
 A_NOERR="$A_NOBOLD$A_NOCOLOR"
 
 
 #### FUNCTIONS ####
-
-# Check whether a command exists in the system, optionally with a custom error
-# message
-commandexists () {
-  command -v "$1" > /dev/null || { echo "Required command '$1' not found! $2" && echo && exit 1; }
-}
-
-# Seconds since the UNIX epoch
-secondsepoch () {
-  echo $(($(date +%s%N) / 1000000))
-}
 
 # Portable fixed echo with support for escape codes (like 'echo -e')
 echo () {
@@ -76,6 +65,17 @@ echoline () {
 errorexit () {
   echo "$A_ERR$1$A_NOERR"
   exit 1
+}
+
+# Check whether a command exists in the system, optionally with a custom error
+# message
+commandexists () {
+  command -v "$1" > /dev/null || { echo "Required command '$1' not found! $2" && echo && exit 1; }
+}
+
+# Seconds since the UNIX epoch
+secondsepoch () {
+  echo $(($(date +%s%N) / 1000000))
 }
 
 # Arithmetic division using bc
