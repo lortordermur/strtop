@@ -23,6 +23,14 @@ historyinterval="10"
 # Maximum 10 s throughput history (default 24 = 4 minutes)
 maxtphistsize="24"
 
+# Binary units of data
+KIBIBYTE="$((1024))"
+MEBIBYTE="$(($KIBIBYTE * $KIBIBYTE))"
+GIBIBYTE="$(($MEBIBYTE * $KIBIBYTE))"
+TEBIBYTE="$(($GIBIBYTE * $KIBIBYTE))"
+PEBIBYTE="$(($TEBIBYTE * $KIBIBYTE))"
+EXBIBYTE="$(($PEBIBYTE * $KIBIBYTE))"
+
 # ANSI formatting codes
 A_BOLD="\e[1m"
 A_NOBOLD="\e[21m"
@@ -78,12 +86,12 @@ secondsepoch () {
   echo $(($(date +%s%N) / 1000000))
 }
 
-# Arithmetic division using bc
+# Arithmetic division using bc, and printf for rounding
 divf () {
-  scale="1" # Default to one decimal place
-  [ "$3" ] && scale="$3"
-
-  echo "scale=$scale; $1/$2" | bc
+  local decplaces="1" # Default to one decimal place
+  [ "$3" ] && decplaces="$3"
+  
+  LANG=C printf "%.${decplaces}f" $(echo "$1/$2" | bc -l)
 }
 
 # Turn a byte amount into something human-readable
@@ -99,20 +107,20 @@ formatbytes () {
     else
       bytestring="$2"
     fi
-  elif [ "$bytes" -le "1024" ]; then
+  elif [ "$bytes" -le "$KIBIBYTE" ]; then
     bytestring="$bytes B"
-  elif [ "$bytes" -le "1048576" ]; then
-    bytestring="$(divf "$bytes" "1024") KB"
-  elif [ "$bytes" -le "1073741824" ]; then
-    bytestring="$(divf "$bytes" "1048576") MB"
-  elif [ "$bytes" -le "1099511627776" ]; then
-    bytestring="$(divf "$bytes" "1073741824") GB"
-  elif [ "$bytes" -le "1125899906842624" ]; then
-    bytestring="$(divf "$bytes" "1099511627776") TB"
-  elif [ "$bytes" -le "1152921504606846976" ]; then
-    bytestring="$(divf "$bytes" "1125899906842624") PB"
+  elif [ "$bytes" -le "$MEBIBYTE" ]; then
+    bytestring="$(divf "$bytes" "$KIBIBYTE") KiB"
+  elif [ "$bytes" -le "$GIBIBYTE" ]; then
+    bytestring="$(divf "$bytes" "$MEBIBYTE") MiB"
+  elif [ "$bytes" -le "$TEBIBYTE" ]; then
+    bytestring="$(divf "$bytes" "$GIBIBYTE") GiB"
+  elif [ "$bytes" -le "$PEBIBYTE" ]; then
+    bytestring="$(divf "$bytes" "$TEBIBYTE") TiB"
+  elif [ "$bytes" -le "$EXBIBYTE" ]; then
+    bytestring="$(divf "$bytes" "$PEBIBYTE") PiB"
   else
-    bytestring="$(divf "$bytes" "1152921504606846976") EB"
+    bytestring="$(divf "$bytes" "$EXBIBYTE") EiB"
   fi
 
 echo $bytestring
