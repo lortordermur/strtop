@@ -24,7 +24,7 @@ historyinterval="10"
 maxtphistsize="24"
 
 # Binary units of data
-KIBIBYTE="$((1024))"
+KIBIBYTE="1024"
 MEBIBYTE="$(($KIBIBYTE * $KIBIBYTE))"
 GIBIBYTE="$(($MEBIBYTE * $KIBIBYTE))"
 TEBIBYTE="$(($GIBIBYTE * $KIBIBYTE))"
@@ -52,6 +52,17 @@ A_NOERR="$A_NOBOLD$A_NOCOLOR"
 # Portable fixed echo with support for escape codes (like 'echo -e')
 echo () {
   printf "%b\n" "$*"
+}
+
+# Create a string of a single character
+charstring () {
+  local wid="$viewwidth"
+  local chr=" "
+
+  [ "$1" ] && chr="$1"
+  [ "$2" ] && wid="$2"
+
+  printf "%*s" "$wid" | tr " " "$chr"
 }
 
 newline () {
@@ -220,17 +231,18 @@ commandexists "bc"
 commandexists "tput" "Please install the ncurses binaries."
 
 # Generate an inverted horizontal separator bar
-separator=$A_INV
-for i in $(seq $viewwidth); do
-  separator="$separator-"
-done
-separator="$separator$A_NOINV"
+separator="$A_INV$(charstring "-")$A_NOINV"
 
 statusurl="$relayserver:$relayport/status"
 tphistory=
 
-# Clear the screen before the main loop
-tput clear
+# Some terminal init before the main loop
+tput clear  # Clear the screen
+tput rmam   # Disable line wrap
+
+# Set up traps for window size change and forced exit
+trap "tput clear" WINCH
+trap "tput reset; exit 0" TERM ABRT KILL HUP
 
 # Main loop start
 while true; do
@@ -319,11 +331,7 @@ while true; do
 
   # Create filler space if the history is not yet filled up
   fillspace=$(($maxtphistsize - $(echo $tphistory | wc -w)))
-  fillstring=""
-
-  for i in $(seq $fillspace); do
-    fillstring="$fillstring  "
-  done
+  fillstring=$(charstring " " "$(($fillspace * 2))")
 
   # Output the filler space and bars, line by line
   for barline in 5 4 3 2 1; do
@@ -366,4 +374,6 @@ while true; do
 done
 # Main loop end
 
+# Fully reset the terminal in order to reliably restore line-wrap
+tput reset
 exit 0
