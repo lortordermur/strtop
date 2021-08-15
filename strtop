@@ -108,9 +108,11 @@ divf () {
 # Turn a byte amount into something human-readable
 formatbytes () {
   local bytes="0"
+  local decplaces
   local bytestring
   
   [ "$1" ] && bytes="$1"
+  [ "$3" ] && decplaces="$3"
   
   if [ "$bytes" -eq "0" ]; then
     if [ -z "$2" ]; then
@@ -121,28 +123,28 @@ formatbytes () {
   elif [ "$bytes" -le "$KIBIBYTE" ]; then
     bytestring="$bytes B"
   elif [ "$bytes" -le "$MEBIBYTE" ]; then
-    bytestring="$(divf "$bytes" "$KIBIBYTE") KiB"
+    bytestring="$(divf "$bytes" "$KIBIBYTE" "$decplaces") KiB"
   elif [ "$bytes" -le "$GIBIBYTE" ]; then
-    bytestring="$(divf "$bytes" "$MEBIBYTE") MiB"
+    bytestring="$(divf "$bytes" "$MEBIBYTE" "$decplaces") MiB"
   elif [ "$bytes" -le "$TEBIBYTE" ]; then
-    bytestring="$(divf "$bytes" "$GIBIBYTE") GiB"
+    bytestring="$(divf "$bytes" "$GIBIBYTE" "$decplaces") GiB"
   elif [ "$bytes" -le "$PEBIBYTE" ]; then
-    bytestring="$(divf "$bytes" "$TEBIBYTE") TiB"
+    bytestring="$(divf "$bytes" "$TEBIBYTE" "$decplaces") TiB"
   elif [ "$bytes" -le "$EXBIBYTE" ]; then
-    bytestring="$(divf "$bytes" "$PEBIBYTE") PiB"
+    bytestring="$(divf "$bytes" "$PEBIBYTE" "$decplaces") PiB"
   else
-    bytestring="$(divf "$bytes" "$EXBIBYTE") EiB"
+    bytestring="$(divf "$bytes" "$EXBIBYTE" "$decplaces") EiB"
   fi
 
 echo $bytestring
 }
 
 formatbits () {
-  formatbytes $(($1 / 8)) $2
+  formatbytes $(($1 / 8)) $2 $3
 }
 
 formatkbits () {
-  formatbytes $(($1 * 128)) $2
+  formatbytes $(($1 * 128)) $2 $3
 }
 
 # Turn seconds into a nice and brief time string
@@ -293,11 +295,11 @@ while true; do
 
   globalrate=$(echo $relaystatus | jq '.options["global-rate"]')
   persessionrate=$(echo $relaystatus | jq '.options["per-session-rate"]')
-  echoline "Global rate limit: $A_BOLD$(formatbytes $globalrate "unlimited")/s$A_NOBOLD, per session limit: $A_BOLD$(formatbytes $persessionrate "unlimited")/s$A_NOBOLD"
+  echoline "Global rate limit: $A_BOLD$(formatbytes $globalrate "unlimited" "2")/s$A_NOBOLD, per session limit: $A_BOLD$(formatbytes $persessionrate "unlimited" "2")/s$A_NOBOLD"
 
   # Throughput information
   bytesproxied=$(echo $relaystatus | jq '.bytesProxied')
-  echoline "Data proxied: $A_BOLD$(formatbytes $bytesproxied "--")$A_NOBOLD"
+  echoline "Data proxied: $A_BOLD$(formatbytes $bytesproxied "--" "3")$A_NOBOLD"
 
   curspd=$(echo $relaystatus | jq '.kbps10s1m5m15m30m60m[0]')
   kbps10s=$(formatkbits $curspd "--")
