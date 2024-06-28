@@ -204,7 +204,7 @@ Parameters
 
 [relayserver]: IP address or network name of the relay. Defaults to
                'localhost'.
-[relayport]:   Port to connect to. Defaults to 22070.
+[relayport]:   Port to connect to. Defaults to $relayport.
 "
 
   exit 0
@@ -239,12 +239,13 @@ statusurl="$relayserver:$relayport/status"
 tphistory=
 
 # Some terminal init before the main loop
+tput smcup  # Save the terminal screen contents
 tput clear  # Clear the screen
 tput rmam   # Disable line wrap
 
 # Set up traps for window size change and forced exit
 trap "tput clear" WINCH
-trap "tput reset; exit 0" TERM ABRT KILL HUP
+trap "tput rmcup; exit 0" TERM ABRT KILL HUP
 
 # Main loop start
 while true; do
