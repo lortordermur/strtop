@@ -27,4 +27,4 @@ script to somewhere in your path, like `~/bin`. Symlinking works too.
 'localhost'. `relayport` defaults to 22070.
 
 
-[1]: https://stedolan.github.io/jq/
+[1]: https://jqlang.org/
